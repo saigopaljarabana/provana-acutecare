@@ -162,6 +162,7 @@ function ActionButton({
   const [state, setState] = useState<ActionState>("idle");
   const [selectedDose, setSelectedDose] = useState(doseOptions?.[0] ?? "");
   const [resultMsg, setResultMsg] = useState("");
+  const [pendingResult, setPendingResult] = useState<GovernanceResult | null>(null);
 
   const idleColor = {
     primary: "bg-blue-600 hover:bg-blue-700 text-white border-blue-700",
@@ -183,22 +184,32 @@ function ActionButton({
 
   function handleClick() {
     if (!onAction || state !== "idle") return;
+    const result = onAction(action);
+    if (result.outcome === "BLOCKED" || result.outcome === "ROUTED") {
+      setState(result.outcome);
+      setResultMsg(result.message ?? "");
+      setTimeout(() => { setState("idle"); setResultMsg(""); }, 5000);
+      return;
+    }
+    // AUTHORIZED: store result and show confirm panel (don't call onAction again)
+    setPendingResult(result);
     setState("confirming");
   }
 
   function handleConfirm() {
-    if (!onAction) return;
-    const result = onAction(action);
-    setState(result.outcome);
-    setResultMsg(result.message ?? "");
-    if (result.outcome === "AUTHORIZED" && onAuthorized) {
+    if (!pendingResult) return;
+    setState(pendingResult.outcome);
+    setResultMsg(pendingResult.message ?? "");
+    if (pendingResult.outcome === "AUTHORIZED" && onAuthorized) {
       onAuthorized(action, detail);
     }
+    setPendingResult(null);
     setTimeout(() => { setState("idle"); setResultMsg(""); }, 5000);
   }
 
   function handleCancel() {
     setState("idle");
+    setPendingResult(null);
   }
 
   if (state === "confirming") {
