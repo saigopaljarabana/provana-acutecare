@@ -26,7 +26,6 @@ export interface RuntimeProtocolProps {
   lastKnownWell?: string;
   weight?: number;
   status?: string;
-  fdaWarning?: string;
   onAction?: (action: GovernedAction) => GovernanceResult;
 }
 
@@ -249,9 +248,7 @@ function SepsisRenderer(p: RuntimeProtocolProps) {
         </div>
 
         {/* Allergy mutation */}
-        {allergies.length > 0 && (
-          <AllergyAlert allergies={allergies} fdaWarning={p.fdaWarning} fdaSource={!!p.fdaWarning} />
-        )}
+        {allergies.length > 0 && <AllergyAlert allergies={allergies} />}
 
         {/* Treatment */}
         <div className={`rounded-xl border-2 p-3 ${allergyDriven ? "border-orange-400 bg-orange-50" : "border-green-400 bg-green-50"}`}>
@@ -362,9 +359,7 @@ function StrokeRenderer(p: RuntimeProtocolProps) {
           </div>
         )}
 
-        {p.allergies && p.allergies.length > 0 && (
-          <AllergyAlert allergies={p.allergies} compact fdaWarning={p.fdaWarning} fdaSource={!!p.fdaWarning} />
-        )}
+        {p.allergies && p.allergies.length > 0 && <AllergyAlert allergies={p.allergies} compact />}
 
         <div className={`rounded-xl p-3 border-2 space-y-2 ${tpaEligible ? "bg-green-50 border-green-500" : "bg-red-50 border-red-400"}`}>
           <p className={`text-sm font-bold ${tpaEligible ? "text-green-800" : "text-red-700"}`}>
