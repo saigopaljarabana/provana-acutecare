@@ -51,7 +51,7 @@ export default function Home() {
       { name: "lastKnownWell", type: "string", description: "(stroke) Time since last known well, e.g. '90 minutes ago' — omit if not applicable", required: false },
       { name: "weight", type: "number", description: "(pediatric) Weight in kg — omit if not applicable", required: false },
     ],
-    handler: () => {},
+    handler: async () => {},
     render: ({ status, args }) => {
       // Emit governance cascade once per protocol render
       const protocolType = args?.protocolType as string | undefined;
