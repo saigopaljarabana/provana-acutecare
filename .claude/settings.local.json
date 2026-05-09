@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)"
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Bash(npm install *)",
+      "Bash(node -e \"const p = require\\('./node_modules/@copilotkit/react-core/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(mkdir -p \"C:/Users/saigo/provana-acutecare/app/api/copilotkit\")",
+      "Bash(mkdir -p \"C:/Users/saigo/provana-acutecare/components\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(npx next *)"
     ]
   }
 }
