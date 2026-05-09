@@ -69,6 +69,7 @@ interface BundleChecklistProps {
 export function BundleChecklist({ protocolType, patientSeverity }: BundleChecklistProps) {
   const items = PROTOCOL_CHECKLISTS[protocolType] ?? [];
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [checkedAt, setCheckedAt] = useState<Record<string, number>>({});
   const [now, setNow] = useState(Date.now());
   const startRef = useRef(Date.now());
 
@@ -77,12 +78,19 @@ export function BundleChecklist({ protocolType, patientSeverity }: BundleCheckli
     return () => clearInterval(id);
   }, []);
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
     setChecked((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        setCheckedAt((a) => { const n = { ...a }; delete n[id]; return n; });
+      } else {
+        next.add(id);
+        setCheckedAt((a) => ({ ...a, [id]: Date.now() }));
+      }
       return next;
     });
+  };
 
   const criticalItems = items.filter((i) => i.critical);
   const criticalDone = criticalItems.filter((i) => checked.has(i.id)).length;
@@ -146,6 +154,9 @@ export function BundleChecklist({ protocolType, patientSeverity }: BundleCheckli
       <ul className="divide-y divide-gray-50">
         {items.map((item) => {
           const done = checked.has(item.id);
+          const doneAgo = done && checkedAt[item.id]
+            ? Math.floor((now - checkedAt[item.id]) / 60000)
+            : null;
           const targetMins = item.timeTarget ? parseTargetMinutes(item.timeTarget) : null;
           const hasCountdown = targetMins !== null && !done;
           const remainingMs = hasCountdown ? targetMins * 60 * 1000 - elapsed : 0;
@@ -210,7 +221,12 @@ export function BundleChecklist({ protocolType, patientSeverity }: BundleCheckli
                         : item.timeTarget}
                     </span>
                   )}
-                  {item.detail && !isOverdue && (
+                  {done && doneAgo !== null && (
+                    <span className="text-xs text-green-600 font-medium">
+                      completed {doneAgo === 0 ? "just now" : `${doneAgo}m ago`}
+                    </span>
+                  )}
+                  {!done && item.detail && !isOverdue && (
                     <span className="text-xs text-gray-400 truncate">{item.detail}</span>
                   )}
                 </div>
