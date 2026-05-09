@@ -50,6 +50,7 @@ export default function Home() {
       },
       { name: "weight", type: "number", description: "(pediatric) Weight in kg — omit if not applicable" },
     ],
+    handler: async () => {},
     render: ({ status, args }) => (
       <ProtocolRenderer args={args as Partial<ProtocolArgs>} status={status} />
     ),
