@@ -27,6 +27,7 @@ export interface RuntimeProtocolProps {
   weight?: number;
   status?: string;
   onAction?: (action: GovernedAction) => GovernanceResult;
+  onAuthorized?: (action: GovernedAction, detail: string) => void;
 }
 
 // ─────────────────────────────────────────────
@@ -145,15 +146,17 @@ function ActionButton({
   label,
   action,
   onAction,
+  onAuthorized,
+  detail,
   variant = "primary",
-  confirmDetail,
   doseOptions,
 }: {
   label: string;
   action: GovernedAction;
   onAction?: (action: GovernedAction) => GovernanceResult;
+  onAuthorized?: (action: GovernedAction, detail: string) => void;
+  detail: string;
   variant?: "primary" | "warning" | "danger";
-  confirmDetail?: string;
   doseOptions?: string[];
 }) {
   const [state, setState] = useState<ActionState>("idle");
@@ -188,6 +191,9 @@ function ActionButton({
     const result = onAction(action);
     setState(result.outcome);
     setResultMsg(result.message ?? "");
+    if (result.outcome === "AUTHORIZED" && onAuthorized) {
+      onAuthorized(action, detail);
+    }
     setTimeout(() => { setState("idle"); setResultMsg(""); }, 5000);
   }
 
@@ -202,8 +208,8 @@ function ActionButton({
           <p className={`text-xs font-bold uppercase tracking-wide ${confirmText}`}>
             Confirm Order
           </p>
-          {confirmDetail && (
-            <p className={`text-sm font-semibold mt-0.5 ${confirmText}`}>{confirmDetail}</p>
+          {detail && (
+            <p className={`text-sm font-semibold mt-0.5 ${confirmText}`}>{detail}</p>
           )}
         </div>
 
@@ -407,8 +413,9 @@ function SepsisRenderer(p: RuntimeProtocolProps) {
             label={`Order ${drug}`}
             action="order_antibiotics"
             onAction={p.onAction}
+            onAuthorized={p.onAuthorized}
+            detail={`${drug} ${dose} ordered for ${p.patientName ?? "patient"}`}
             variant="primary"
-            confirmDetail={`${drug} · ${dose} · IV`}
             doseOptions={doseOptions}
           />
         </div>
@@ -425,8 +432,9 @@ function SepsisRenderer(p: RuntimeProtocolProps) {
               label="Activate Vasopressor Protocol"
               action="activate_mtp"
               onAction={p.onAction}
+              onAuthorized={p.onAuthorized}
+              detail={`Norepinephrine vasopressor activated for ${p.patientName ?? "patient"}, MAP target ≥65`}
               variant="warning"
-              confirmDetail="Norepinephrine · 0.01 mcg/kg/min IV · titrate to MAP ≥65"
               doseOptions={[
                 "0.01 mcg/kg/min (start low)",
                 "0.05 mcg/kg/min (moderate shock)",
@@ -448,8 +456,9 @@ function SepsisRenderer(p: RuntimeProtocolProps) {
           label="Escalate to Attending"
           action="escalate_to_doctor"
           onAction={p.onAction}
+          onAuthorized={p.onAuthorized}
+          detail={`Sepsis case escalated to Attending for ${p.patientName ?? "patient"}, severity ${p.severity ?? "high"}`}
           variant="danger"
-          confirmDetail="Send escalation alert to on-call Attending"
         />
 
         <BundleChecklist protocolType="sepsis_bundle" patientSeverity={p.severity} />
@@ -560,8 +569,9 @@ function StrokeRenderer(p: RuntimeProtocolProps) {
               label="Authorize tPA"
               action="order_tpa"
               onAction={p.onAction}
+              onAuthorized={p.onAuthorized}
+              detail={`Alteplase 0.9 mg/kg authorized for ${p.patientName ?? "patient"}, last known well ${p.lastKnownWell ?? "within window"}`}
               variant="danger"
-              confirmDetail="Alteplase 0.9 mg/kg IV · max 90mg · 10% bolus then 60 min infusion"
               doseOptions={[
                 "0.9 mg/kg IV (standard — max 90mg)",
                 "0.6 mg/kg IV (low-dose — select studies)",
@@ -574,8 +584,9 @@ function StrokeRenderer(p: RuntimeProtocolProps) {
           label="Escalate to Attending"
           action="escalate_to_doctor"
           onAction={p.onAction}
+          onAuthorized={p.onAuthorized}
+          detail={`Stroke case escalated to Attending for ${p.patientName ?? "patient"}, NIHSS ${p.nihssScore ?? "unknown"}`}
           variant="warning"
-          confirmDetail="Send stroke alert to on-call Attending / Neurology"
         />
 
         <BundleChecklist protocolType="stroke_code" />
@@ -666,8 +677,9 @@ function PediatricRenderer(p: RuntimeProtocolProps) {
             label={`Order ${antibioticDrug}`}
             action="order_antibiotics"
             onAction={p.onAction}
+            onAuthorized={p.onAuthorized}
+            detail={`${antibioticDose} ordered for ${p.patientName ?? "infant"}, weight ${p.weight ?? "?"} kg`}
             variant="primary"
-            confirmDetail={`${antibioticDrug} · ${antibioticDose} · IV`}
             doseOptions={abxDoseOptions}
           />
         </div>
@@ -676,8 +688,9 @@ function PediatricRenderer(p: RuntimeProtocolProps) {
           label="Escalate to Attending"
           action="escalate_to_doctor"
           onAction={p.onAction}
+          onAuthorized={p.onAuthorized}
+          detail={`Pediatric fever case escalated to Attending for ${p.patientName ?? "infant"}, age ${p.age ?? "?"} y`}
           variant="warning"
-          confirmDetail="Send pediatric alert to on-call Attending"
         />
 
         <BundleChecklist protocolType="pediatric_fever" />
