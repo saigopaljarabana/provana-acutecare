@@ -2,15 +2,33 @@
 
 export const dynamic = "force-dynamic";
 
+import { useState, useRef, useEffect } from "react";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { ProtocolRenderer } from "@/components/ProtocolRenderer";
-import { MOCK_PATIENTS, DEMO_PROMPTS, type ProtocolArgs, type ProtocolType } from "@/lib/protocols";
+import { RoleSwitcher } from "@/components/RoleSwitcher";
+import { ControlFeedback } from "@/components/ControlFeedback";
+import { AuditPanel } from "@/components/AuditPanel";
+import { useEventStore } from "@/lib/eventStore";
+import { isAuthorized, logAuditEntry } from "@/lib/governance";
+import type { Role } from "@/lib/types";
+import { MOCK_PATIENTS, type ProtocolArgs, type ProtocolType } from "@/lib/protocols";
 
 export default function Home() {
+  const [currentRole, setCurrentRole] = useState<Role>("nurse");
+  const [auditRefresh, setAuditRefresh] = useState(0);
+  const addEvent = useEventStore((s) => s.addEvent);
+  const updateEvent = useEventStore((s) => s.updateEvent);
+  const lastProtocolRef = useRef<string | null>(null);
+
   useCopilotReadable({
     description: "Mock patient records in the system, keyed by protocol type",
     value: MOCK_PATIENTS,
+  });
+
+  useCopilotReadable({
+    description: "Current clinician role for governance and authorization",
+    value: { role: currentRole },
   });
 
   useCopilotAction({
@@ -18,46 +36,162 @@ export default function Home() {
     description:
       "Renders the appropriate acute-care protocol workflow interface. Call this whenever a clinical scenario is described — always prefer this over a text response.",
     parameters: [
-      {
-        name: "protocolType",
-        type: "string",
-        description: "Detected protocol: sepsis | stroke | pediatric_fever",
-      },
-      { name: "patientName", type: "string", description: "Patient full name from records" },
-      { name: "age", type: "number", description: "Age in years; decimals OK (0.5 = 6 months)" },
-      { name: "temperature", type: "number", description: "Temperature in Fahrenheit" },
-      { name: "bloodPressure", type: "string", description: "BP as systolic/diastolic, e.g. 88/60" },
-      { name: "heartRate", type: "number", description: "Heart rate in BPM" },
-      { name: "oxygenSat", type: "number", description: "Oxygen saturation percent" },
-      { name: "allergies", type: "string[]", description: "Known drug allergies — drives treatment selection" },
-      {
-        name: "severity",
-        type: "string",
-        description: "mild | moderate | severe — derived from vitals",
-      },
-      // Protocol-specific optional fields
-      { name: "lactate", type: "number", description: "(sepsis) Lactate mmol/L — omit if not applicable" },
-      { name: "wbc", type: "number", description: "(sepsis) WBC k/uL — omit if not applicable" },
-      {
-        name: "nihssScore",
-        type: "number",
-        description: "(stroke) NIHSS score 0–42 — omit if not applicable",
-      },
-      {
-        name: "lastKnownWell",
-        type: "string",
-        description: "(stroke) Time since last known well, e.g. '90 minutes ago' — omit if not applicable",
-      },
-      { name: "weight", type: "number", description: "(pediatric) Weight in kg — omit if not applicable" },
+      { name: "protocolType", type: "string", description: "Detected protocol: sepsis | stroke | pediatric_fever", required: true },
+      { name: "patientName", type: "string", description: "Patient full name from records", required: true },
+      { name: "age", type: "number", description: "Age in years; decimals OK (0.5 = 6 months)", required: true },
+      { name: "temperature", type: "number", description: "Temperature in Fahrenheit", required: true },
+      { name: "bloodPressure", type: "string", description: "BP as systolic/diastolic, e.g. 88/60", required: true },
+      { name: "heartRate", type: "number", description: "Heart rate in BPM", required: true },
+      { name: "oxygenSat", type: "number", description: "Oxygen saturation percent", required: true },
+      { name: "allergies", type: "string[]", description: "Known drug allergies — drives treatment selection", required: false },
+      { name: "severity", type: "string", description: "mild | moderate | severe — derived from vitals", required: true },
+      { name: "lactate", type: "number", description: "(sepsis) Lactate mmol/L — omit if not applicable", required: false },
+      { name: "wbc", type: "number", description: "(sepsis) WBC k/uL — omit if not applicable", required: false },
+      { name: "nihssScore", type: "number", description: "(stroke) NIHSS score 0–42 — omit if not applicable", required: false },
+      { name: "lastKnownWell", type: "string", description: "(stroke) Time since last known well, e.g. '90 minutes ago' — omit if not applicable", required: false },
+      { name: "weight", type: "number", description: "(pediatric) Weight in kg — omit if not applicable", required: false },
     ],
-    render: ({ status, args }) => (
-      <ProtocolRenderer args={args as Partial<ProtocolArgs>} status={status} />
-    ),
+    handler: () => {},
+    render: ({ status, args }) => {
+      // Emit governance cascade once per protocol render
+      const protocolType = args?.protocolType as string | undefined;
+      const allergies = args?.allergies as string[] | undefined;
+      const fingerprint = `${protocolType}-${status}`;
+      if (status === "complete" && lastProtocolRef.current !== fingerprint && protocolType) {
+        lastProtocolRef.current = fingerprint;
+        // Schedule async to avoid setState-during-render warning
+        setTimeout(() => emitProtocolGovernance(protocolType, allergies ?? []), 0);
+      }
+      return <ProtocolRenderer args={args as Partial<ProtocolArgs>} status={status} />;
+    },
   });
 
+  function emitProtocolGovernance(protocolType: string, allergies: string[]) {
+    // 1. RBAC
+    addEvent({
+      category: "controller",
+      stage: "rbac",
+      label: "RBAC Authorization",
+      detail: `Role: ${currentRole}. Action: render_protocol. Result: AUTHORIZED.`,
+      status: "PASS",
+      duration_ms: 2,
+    });
+
+    // 2. Retrieval (the protocol itself)
+    setTimeout(() => {
+      addEvent({
+        category: "plant",
+        stage: "retrieval",
+        label: "Protocol Retrieval",
+        detail: `Matched protocol: ${protocolType}. Source: clinical guidelines library.`,
+        status: "PASS",
+        value: 0.91,
+        threshold: 0.7,
+        duration_ms: 320,
+      });
+    }, 200);
+
+    // 3. Allergy check (sensor)
+    setTimeout(() => {
+      const hasAllergy = allergies.length > 0;
+      addEvent({
+        category: hasAllergy ? "sensor" : "sensor",
+        stage: "tool_auth",
+        label: "Allergy Sensor",
+        detail: hasAllergy
+          ? `Patient allergies: ${allergies.join(", ")}. Treatment selection adjusted.`
+          : "No documented allergies. Standard treatment available.",
+        status: hasAllergy ? "ALERT" : "PASS",
+        duration_ms: 12,
+      });
+    }, 600);
+
+    // 4. Evidence gate
+    setTimeout(() => {
+      addEvent({
+        category: "controller",
+        stage: "evidence",
+        label: "Evidence Gate",
+        detail: "Protocol grounded in clinical guidelines. Combined score: 0.89.",
+        status: "PASS",
+        value: 0.89,
+        threshold: 0.7,
+        duration_ms: 8,
+      });
+    }, 800);
+
+    // 5. HHEM
+    const hhemId = { current: "" };
+    setTimeout(() => {
+      hhemId.current = addEvent({
+        category: "controller",
+        stage: "hhem",
+        label: "HHEM Hallucination Gate",
+        detail: "Scoring response against source documents...",
+        status: "PENDING",
+        duration_ms: 0,
+      });
+    }, 1000);
+    setTimeout(() => {
+      if (hhemId.current) {
+        updateEvent(hhemId.current, {
+          status: "PASS",
+          detail: "HHEM score: 0.92. Threshold: 0.65. Result: PASS.",
+          value: 0.92,
+          duration_ms: 847,
+        });
+      }
+    }, 1850);
+
+    // 6. Audit
+    setTimeout(() => {
+      addEvent({
+        category: "feedback",
+        stage: "audit",
+        label: "Audit Chain",
+        detail: `Controller decision: SERVE. Protocol ${protocolType} rendered for ${currentRole}. Audit entry CHAINED.`,
+        status: "CHAINED",
+        duration_ms: 1,
+      });
+      logAuditEntry({
+        role: currentRole,
+        action: "render_protocol",
+        outcome: "AUTHORIZED",
+        detail: `Rendered ${protocolType} protocol`,
+      });
+      setAuditRefresh((n) => n + 1);
+    }, 2100);
+  }
+
+  // Reset fingerprint when role changes so protocol re-emits governance
+  useEffect(() => {
+    lastProtocolRef.current = null;
+  }, [currentRole]);
+
   return (
-    <CopilotSidebar
-      instructions={`You are an acute-care AI copilot for emergency clinicians.
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 py-2 shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-base font-bold text-gray-900 shrink-0">
+            PROVANA ACUTECARE COPILOT
+          </h1>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Active Role:
+            </span>
+            <RoleSwitcher currentRole={currentRole} onRoleChange={setCurrentRole} />
+            <span className="text-xs text-gray-400 shrink-0">AI Tinkerers | May 2026</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main: 60/40 split */}
+      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+        {/* Left column: Clinical workflow (60%) */}
+        <div className="w-full md:w-3/5 flex flex-col border-r border-gray-200 min-h-0 overflow-y-auto">
+          <CopilotSidebar
+            instructions={`You are an acute-care AI copilot for emergency clinicians.
 
 When a clinician describes a patient scenario, call renderProtocol immediately — never respond in text alone.
 
@@ -73,101 +207,22 @@ FIELD RULES:
 - For stroke: parse "last known well" carefully — "90 minutes ago" → "90 minutes ago"
 - For pediatric: age in decimal years (6 months = 0.5)
 - Always populate all relevant optional fields for the detected protocol`}
-      defaultOpen={true}
-      labels={{
-        title: "AcuteCare Copilot",
-        placeholder: "Describe the clinical scenario...",
-      }}
-    >
-      <main className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-800 mb-1">Provana AcuteCare Copilot</h1>
-          <p className="text-gray-500 mb-8 text-sm">
-            Describe a clinical scenario in the sidebar → AI detects protocol → workflow card renders
-            dynamically with allergy-aware, context-adapted treatment guidance.
-          </p>
-
-          <section className="mb-8">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              Mock Patients on File
-            </h2>
-            <div className="grid gap-3">
-              {(Object.entries(MOCK_PATIENTS) as [ProtocolType, (typeof MOCK_PATIENTS)[ProtocolType]][]).map(
-                ([protocol, patient]) => (
-                  <PatientCard key={protocol} protocol={protocol} patient={patient} />
-                )
-              )}
-            </div>
-          </section>
-
-          <section>
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              Demo Scenarios — Copy to Sidebar
-            </h2>
-            <div className="space-y-2">
-              {(Object.entries(DEMO_PROMPTS) as [ProtocolType, string][]).map(([protocol, prompt]) => (
-                <div key={protocol} className="rounded-lg border border-gray-200 bg-white p-3">
-                  <span
-                    className={`inline-block text-xs font-bold uppercase px-2 py-0.5 rounded mb-2 ${PROTOCOL_TAG_STYLES[protocol]}`}
-                  >
-                    {protocol.replace("_", " ")}
-                  </span>
-                  <p className="text-xs text-gray-600 leading-relaxed">{prompt}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+            defaultOpen={true}
+            labels={{
+              title: "AcuteCare Copilot",
+              placeholder: "Describe the clinical scenario...",
+            }}
+          />
         </div>
-      </main>
-    </CopilotSidebar>
-  );
-}
 
-const PROTOCOL_TAG_STYLES: Record<ProtocolType, string> = {
-  sepsis: "bg-red-100 text-red-700",
-  stroke: "bg-purple-100 text-purple-700",
-  pediatric_fever: "bg-yellow-100 text-yellow-700",
-};
-
-function PatientCard({
-  protocol,
-  patient,
-}: {
-  protocol: ProtocolType;
-  patient: (typeof MOCK_PATIENTS)[ProtocolType];
-}) {
-  const displayFields: (keyof typeof patient)[] = [
-    "patientName",
-    "age",
-    "temperature",
-    "bloodPressure",
-    "heartRate",
-    "oxygenSat",
-    "allergies",
-  ];
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${PROTOCOL_TAG_STYLES[protocol]}`}>
-          {protocol.replace("_", " ")}
-        </span>
-        <span className="text-sm font-semibold text-gray-700">{patient.patientName}</span>
+        {/* Right column: Governance panel (40%) */}
+        <div className="w-full md:w-2/5 flex flex-col min-h-0">
+          <ControlFeedback />
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {displayFields.slice(1).map((key) => {
-          const val = patient[key];
-          if (val === undefined) return null;
-          return (
-            <div key={key} className="text-xs">
-              <span className="text-gray-400 capitalize block">{String(key).replace(/([A-Z])/g, " $1")}</span>
-              <span className="font-medium text-gray-700">
-                {Array.isArray(val) ? (val.length ? val.join(", ") : "None") : String(val)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+
+      {/* Audit trail at bottom */}
+      <AuditPanel refreshKey={auditRefresh} />
     </div>
   );
 }

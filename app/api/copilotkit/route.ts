@@ -1,9 +1,9 @@
 import {
   CopilotRuntime,
-  AnthropicAdapter,
+  OpenAIAdapter,
   copilotRuntimeNextJSAppRouterEndpoint,
 } from "@copilotkit/runtime";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { NextRequest } from "next/server";
 
 const runtime = new CopilotRuntime();
@@ -11,9 +11,9 @@ const runtime = new CopilotRuntime();
 export const POST = async (req: NextRequest) => {
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
     runtime,
-    serviceAdapter: new AnthropicAdapter({
-      anthropic: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
-      model: "claude-sonnet-4-6",
+    serviceAdapter: new OpenAIAdapter({
+      openai: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+      model: "gpt-4o",
     }),
     endpoint: "/api/copilotkit",
   });
