@@ -13,7 +13,8 @@ import { ControlFeedback } from "@/components/ControlFeedback";
 import { AuditPanel } from "@/components/AuditPanel";
 import { useEventStore } from "@/lib/eventStore";
 import { isAuthorized, logAuditEntry } from "@/lib/governance";
-import type { Role } from "@/lib/types";
+import type { Role, GovernedAction } from "@/lib/types";
+import type { GovernanceResult } from "@/src/components/ProtocolRenderer";
 import { MOCK_PATIENTS, type ProtocolArgs, type ProtocolType } from "@/lib/protocols";
 
 export default function Home() {
@@ -180,6 +181,59 @@ export default function Home() {
     lastProtocolRef.current = null;
   }, [currentRole]);
 
+  function handleGovernanceAction(action: GovernedAction): GovernanceResult {
+    const authorized = isAuthorized(currentRole, action);
+    const roleLabel = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
+
+    const requiresMap: Partial<Record<GovernedAction, string>> = {
+      order_antibiotics: "Doctor or Attending",
+      order_tpa:         "Attending",
+      activate_mtp:      "Doctor or Attending",
+      escalate_to_doctor:"All roles",
+    };
+
+    if (authorized) {
+      addEvent({
+        category: "controller",
+        stage: "rbac",
+        label: "Action Authorized",
+        detail: `Role: ${roleLabel}. Action: ${action}. Result: AUTHORIZED.`,
+        status: "PASS",
+        duration_ms: 2,
+      });
+      logAuditEntry({ role: currentRole, action, outcome: "AUTHORIZED", detail: `${roleLabel} authorized ${action}` });
+      setAuditRefresh((n) => n + 1);
+      return { outcome: "AUTHORIZED", message: `${roleLabel} — order placed` };
+    }
+
+    // Nurse trying to escalate is always ROUTE, others are BLOCK
+    if (action === "escalate_to_doctor" && currentRole === "nurse") {
+      addEvent({
+        category: "controller",
+        stage: "rbac",
+        label: "Action Routed",
+        detail: `Role: Nurse. Action: ${action}. Routing to Doctor.`,
+        status: "ALERT",
+        duration_ms: 2,
+      });
+      logAuditEntry({ role: currentRole, action, outcome: "ROUTED", detail: "Nurse escalation routed to doctor" });
+      setAuditRefresh((n) => n + 1);
+      return { outcome: "ROUTED", message: "Escalation sent to on-call Doctor" };
+    }
+
+    addEvent({
+      category: "controller",
+      stage: "rbac",
+      label: "Action Blocked",
+      detail: `Role: ${roleLabel}. Action: ${action}. Requires: ${requiresMap[action] ?? "higher role"}. Result: BLOCKED.`,
+      status: "FAIL",
+      duration_ms: 2,
+    });
+    logAuditEntry({ role: currentRole, action, outcome: "BLOCKED", detail: `${roleLabel} blocked — requires ${requiresMap[action] ?? "higher role"}` });
+    setAuditRefresh((n) => n + 1);
+    return { outcome: "BLOCKED", message: `Requires ${requiresMap[action] ?? "higher role"}` };
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
@@ -243,7 +297,7 @@ CRITICAL: After the renderProtocol tool returns, you are DONE. Do NOT write any 
         <div className="w-full md:w-3/5 flex flex-col min-h-0 overflow-y-auto bg-gray-50">
           <div className="p-4">
             {latestProtocolArgs ? (
-              <ProtocolRenderer args={latestProtocolArgs} status={latestProtocolStatus as any} />
+              <ProtocolRenderer args={latestProtocolArgs} status={latestProtocolStatus as any} onAction={handleGovernanceAction} />
             ) : (
               <div className="flex flex-col items-center justify-center h-96 text-gray-400 text-sm">
                 <p className="mb-2">Clinical workflow appears here.</p>
