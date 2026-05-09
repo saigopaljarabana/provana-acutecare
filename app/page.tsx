@@ -17,6 +17,9 @@ import { MOCK_PATIENTS, type ProtocolArgs, type ProtocolType } from "@/lib/proto
 export default function Home() {
   const [currentRole, setCurrentRole] = useState<Role>("nurse");
   const [auditRefresh, setAuditRefresh] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [latestProtocolArgs, setLatestProtocolArgs] = useState<Partial<ProtocolArgs> | null>(null);
+  const [latestProtocolStatus, setLatestProtocolStatus] = useState<string>("inProgress");
   const addEvent = useEventStore((s) => s.addEvent);
   const updateEvent = useEventStore((s) => s.updateEvent);
   const lastProtocolRef = useRef<string | null>(null);
@@ -53,21 +56,34 @@ export default function Home() {
     ],
     handler: async () => {},
     render: ({ status, args }) => {
-      // Emit governance cascade once per protocol render
       const protocolType = args?.protocolType as string | undefined;
       const allergies = args?.allergies as string[] | undefined;
       const fingerprint = `${protocolType}-${status}`;
+
+      // Capture into state for the right column (only on complete, schedule async)
+      if (status === "complete" && protocolType) {
+        setTimeout(() => {
+          setLatestProtocolArgs(args as Partial<ProtocolArgs>);
+          setLatestProtocolStatus(status);
+        }, 0);
+      }
+
+      // Emit governance cascade once per render
       if (status === "complete" && lastProtocolRef.current !== fingerprint && protocolType) {
         lastProtocolRef.current = fingerprint;
-        // Schedule async to avoid setState-during-render warning
         setTimeout(() => emitProtocolGovernance(protocolType, allergies ?? []), 0);
       }
-      return <ProtocolRenderer args={args as Partial<ProtocolArgs>} status={status} />;
+
+      // Inline render in chat thread (compact placeholder so chat doesn't get crowded)
+      return (
+        <div className="my-2 px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+          ✓ Protocol rendered: {protocolType ?? "..."} — see right panel for full workflow.
+        </div>
+      );
     },
   });
 
   function emitProtocolGovernance(protocolType: string, allergies: string[]) {
-    // 1. RBAC
     addEvent({
       category: "controller",
       stage: "rbac",
@@ -77,7 +93,6 @@ export default function Home() {
       duration_ms: 2,
     });
 
-    // 2. Retrieval (the protocol itself)
     setTimeout(() => {
       addEvent({
         category: "plant",
@@ -91,11 +106,10 @@ export default function Home() {
       });
     }, 200);
 
-    // 3. Allergy check (sensor)
     setTimeout(() => {
       const hasAllergy = allergies.length > 0;
       addEvent({
-        category: hasAllergy ? "sensor" : "sensor",
+        category: "sensor",
         stage: "tool_auth",
         label: "Allergy Sensor",
         detail: hasAllergy
@@ -106,7 +120,6 @@ export default function Home() {
       });
     }, 600);
 
-    // 4. Evidence gate
     setTimeout(() => {
       addEvent({
         category: "controller",
@@ -120,7 +133,6 @@ export default function Home() {
       });
     }, 800);
 
-    // 5. HHEM
     const hhemId = { current: "" };
     setTimeout(() => {
       hhemId.current = addEvent({
@@ -143,7 +155,6 @@ export default function Home() {
       }
     }, 1850);
 
-    // 6. Audit
     setTimeout(() => {
       addEvent({
         category: "feedback",
@@ -163,7 +174,6 @@ export default function Home() {
     }, 2100);
   }
 
-  // Reset fingerprint when role changes so protocol re-emits governance
   useEffect(() => {
     lastProtocolRef.current = null;
   }, [currentRole]);
@@ -181,15 +191,25 @@ export default function Home() {
               Active Role:
             </span>
             <RoleSwitcher currentRole={currentRole} onRoleChange={setCurrentRole} />
+            <button
+              onClick={() => setDrawerOpen((o) => !o)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                drawerOpen
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+              }`}
+            >
+              {drawerOpen ? "Hide" : "Show"} Governance
+            </button>
             <span className="text-xs text-gray-400 shrink-0">AI Tinkerers | May 2026</span>
           </div>
         </div>
       </header>
 
-      {/* Main: 60/40 split */}
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
-        {/* Left column: Clinical workflow (60%) */}
-        <div className="w-full md:w-3/5 flex flex-col border-r border-gray-200 min-h-0 overflow-y-auto">
+      {/* Main: 40/60 split */}
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
+        {/* Left column: Chat (40%) */}
+        <div className="w-full md:w-2/5 flex flex-col border-r border-gray-200 min-h-0">
           <CopilotSidebar
             instructions={`You are an acute-care AI copilot for emergency clinicians.
 
@@ -215,10 +235,28 @@ FIELD RULES:
           />
         </div>
 
-        {/* Right column: Governance panel (40%) */}
-        <div className="w-full md:w-2/5 flex flex-col min-h-0">
-          <ControlFeedback />
+        {/* Right column: Cards (60%) */}
+        <div className="w-full md:w-3/5 flex flex-col min-h-0 overflow-y-auto bg-gray-50">
+          <div className="p-4">
+            {latestProtocolArgs ? (
+              <ProtocolRenderer args={latestProtocolArgs} status={latestProtocolStatus as any} />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-96 text-gray-400 text-sm">
+                <p className="mb-2">Clinical workflow appears here.</p>
+                <p className="text-xs text-gray-500">
+                  Describe a patient scenario in the chat to render a protocol.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Governance drawer (overlay on right) */}
+        {drawerOpen && (
+          <div className="absolute top-0 right-0 h-full w-full md:w-96 bg-white border-l border-gray-200 shadow-xl z-20 flex flex-col">
+            <ControlFeedback />
+          </div>
+        )}
       </div>
 
       {/* Audit trail at bottom */}
