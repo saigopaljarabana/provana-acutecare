@@ -19,6 +19,8 @@ export interface ProtocolArgs {
   lastKnownWell?: string;
   // pediatric
   weight?: number;
+  // fda integration
+  fdaWarning?: string;
 }
 
 export const MOCK_PATIENTS: Record<ProtocolType, Omit<ProtocolArgs, "protocolType">> = {

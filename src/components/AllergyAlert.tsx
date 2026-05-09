@@ -52,9 +52,11 @@ function computeMutations(allergies: string[]): AllergyMutation[] {
 interface AllergyAlertProps {
   allergies: string[];
   compact?: boolean;
+  fdaWarning?: string;
+  fdaSource?: boolean;
 }
 
-export function AllergyAlert({ allergies, compact = false }: AllergyAlertProps) {
+export function AllergyAlert({ allergies, compact = false, fdaWarning, fdaSource }: AllergyAlertProps) {
   if (!allergies.length) return null;
 
   const mutations = computeMutations(allergies);
@@ -120,6 +122,19 @@ export function AllergyAlert({ allergies, compact = false }: AllergyAlertProps) 
         <p className="text-xs text-yellow-700 pl-1">
           Allergy noted — verify drug selection before administration.
         </p>
+      )}
+
+      {/* FDA real-data badge */}
+      {fdaWarning && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">FDA Label</span>
+            {fdaSource && (
+              <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">OpenFDA verified</span>
+            )}
+          </div>
+          <p className="text-xs text-blue-800 leading-relaxed line-clamp-3">{fdaWarning}</p>
+        </div>
       )}
     </div>
   );
