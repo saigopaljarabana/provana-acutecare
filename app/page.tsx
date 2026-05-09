@@ -5,7 +5,8 @@ import "@copilotkit/react-ui/styles.css";
 export const dynamic = "force-dynamic";
 
 import { useState, useRef, useEffect } from "react";
-import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
+import { useCopilotAction, useCopilotReadable, useCopilotChat } from "@copilotkit/react-core";
+import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { ProtocolRenderer } from "@/components/ProtocolRenderer";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
@@ -26,6 +27,7 @@ export default function Home() {
   const addEvent = useEventStore((s) => s.addEvent);
   const updateEvent = useEventStore((s) => s.updateEvent);
   const lastProtocolRef = useRef<string | null>(null);
+  const { appendMessage } = useCopilotChat();
 
   useCopilotReadable({
     description: "Mock patient records in the system, keyed by protocol type",
@@ -181,6 +183,19 @@ export default function Home() {
     lastProtocolRef.current = null;
   }, [currentRole]);
 
+  function handleAuthorized(action: GovernedAction, detail: string) {
+    const nextStepPrompts: Partial<Record<GovernedAction, string>> = {
+      order_antibiotics: `${detail}. What are the immediate next monitoring steps for this patient? Render the updated protocol status.`,
+      order_tpa:         `${detail}. tPA is now infusing. What should the team monitor in the next 60 minutes?`,
+      activate_mtp:      `${detail}. Vasopressor is running. What is the MAP target and reassessment timeline?`,
+      escalate_to_doctor:`${detail}. Attending has been notified. What handoff information is critical right now?`,
+    };
+    const prompt = nextStepPrompts[action];
+    if (prompt) {
+      setTimeout(() => appendMessage(new TextMessage({ role: MessageRole.User, content: prompt })), 600);
+    }
+  }
+
   function handleGovernanceAction(action: GovernedAction): GovernanceResult {
     const authorized = isAuthorized(currentRole, action);
     const roleLabel = currentRole.charAt(0).toUpperCase() + currentRole.slice(1);
@@ -297,7 +312,7 @@ CRITICAL: After the renderProtocol tool returns, you are DONE. Do NOT write any 
         <div className="w-full md:w-3/5 flex flex-col min-h-0 overflow-y-auto bg-gray-50">
           <div className="p-4">
             {latestProtocolArgs ? (
-              <ProtocolRenderer args={latestProtocolArgs} status={latestProtocolStatus as any} onAction={handleGovernanceAction} />
+              <ProtocolRenderer args={latestProtocolArgs} status={latestProtocolStatus as any} onAction={handleGovernanceAction} onAuthorized={handleAuthorized} />
             ) : (
               <div className="flex flex-col items-center justify-center h-96 text-gray-400 text-sm">
                 <p className="mb-2">Clinical workflow appears here.</p>
