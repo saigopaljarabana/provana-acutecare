@@ -1,10 +1,12 @@
 "use client";
 
+import "@copilotkit/react-ui/styles.css";
+
 export const dynamic = "force-dynamic";
 
 import { useState, useRef, useEffect } from "react";
 import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core";
-import { CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotChat } from "@copilotkit/react-ui";
 import { ProtocolRenderer } from "@/components/ProtocolRenderer";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { ControlFeedback } from "@/components/ControlFeedback";
@@ -209,8 +211,8 @@ export default function Home() {
       {/* Main: 40/60 split */}
       <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
         {/* Left column: Chat (40%) */}
-        <div className="w-full md:w-2/5 flex flex-col border-r border-gray-200 min-h-0">
-          <CopilotSidebar
+        <div className="w-full md:w-2/5 flex flex-col border-r border-gray-200 min-h-0 overflow-hidden">
+          <CopilotChat
             instructions={`You are an acute-care AI copilot for emergency clinicians.
 
 When a clinician describes a patient scenario, call renderProtocol immediately — never respond in text alone.
@@ -226,12 +228,14 @@ FIELD RULES:
 - severity: severe if ≥2 critical vitals or explicit shock/critical mention; mild if isolated mild finding
 - For stroke: parse "last known well" carefully — "90 minutes ago" → "90 minutes ago"
 - For pediatric: age in decimal years (6 months = 0.5)
-- Always populate all relevant optional fields for the detected protocol`}
-            defaultOpen={true}
+- Always populate all relevant optional fields for the detected protocol
+
+CRITICAL: After the renderProtocol tool returns, you are DONE. Do NOT write any additional text. Do NOT summarize the protocol. Do NOT add 'Please proceed' or similar. The card IS the complete answer. Say nothing after the card renders.`}
             labels={{
               title: "AcuteCare Copilot",
               placeholder: "Describe the clinical scenario...",
             }}
+            className="h-full"
           />
         </div>
 
